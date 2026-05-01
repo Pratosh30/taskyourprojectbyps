@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ShieldCheck, Users, History, Crown, Shield, Search, UserPlus, X, FolderKanban, ShieldOff } from "lucide-react";
+import { ShieldCheck, Users, History, Crown, Shield, Search, UserPlus, X, FolderKanban, ShieldOff, ArrowRight, UserCog, FolderCog } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow, parseISO } from "date-fns";
 
@@ -30,8 +30,16 @@ interface UserRow {
 interface ProjectRow { id: string; name: string; description: string | null; created_at: string; }
 interface MemberRow { user_id: string; role: ProjectRole; profile: { full_name: string | null; email: string } | null }
 interface AuditRow {
-  id: string; action: string; created_at: string; user_id: string;
-  project_id: string; entity_type: string | null; metadata: any;
+  id: string;
+  actor_id: string | null;
+  target_user_id: string | null;
+  entity_type: string;
+  action: string;
+  old_value: string | null;
+  new_value: string | null;
+  project_id: string | null;
+  metadata: any;
+  created_at: string;
 }
 
 export default function Team() {
@@ -393,39 +401,57 @@ function AuditTab() {
   const [profiles, setProfiles] = useState<Record<string, { full_name: string | null; email: string }>>({});
   const [projects, setProjects] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [entityFilter, setEntityFilter] = useState<"all" | "user_roles" | "project_members">("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
 
   const load = async () => {
     setLoading(true);
     const [{ data: a }, { data: p }, { data: pr }] = await Promise.all([
-      supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200),
+      (supabase as any).from("audit_log").select("*").order("created_at", { ascending: false }).limit(300),
       supabase.from("profiles").select("id,full_name,email"),
       supabase.from("projects").select("id,name"),
     ]);
     setRows((a as AuditRow[]) || []);
-    const pm: Record<string, any> = {}; (p || []).forEach(x => pm[x.id] = x); setProfiles(pm);
-    const prm: Record<string, string> = {}; (pr || []).forEach(x => prm[x.id] = x.name); setProjects(prm);
+    const pm: Record<string, any> = {}; (p || []).forEach((x) => (pm[x.id] = x)); setProfiles(pm);
+    const prm: Record<string, string> = {}; (pr || []).forEach((x) => (prm[x.id] = x.name)); setProjects(prm);
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
-  // Realtime new entries
   useEffect(() => {
     const ch = supabase
       .channel("admin-audit")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_log" }, (payload) => {
-        setRows(prev => [payload.new as AuditRow, ...prev].slice(0, 200));
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "audit_log" }, (payload) => {
+        setRows((prev) => [payload.new as AuditRow, ...prev].slice(0, 300));
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  const filtered = projectFilter === "all" ? rows : rows.filter(r => r.project_id === projectFilter);
+  const filtered = rows.filter((r) => {
+    if (entityFilter !== "all" && r.entity_type !== entityFilter) return false;
+    if (projectFilter !== "all" && r.project_id !== projectFilter) return false;
+    return true;
+  });
+
+  const labelOf = (id?: string | null) => {
+    if (!id) return "system";
+    const u = profiles[id];
+    return u?.full_name || u?.email || "Unknown user";
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
+        <Select value={entityFilter} onValueChange={(v) => setEntityFilter(v as any)}>
+          <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All entity types</SelectItem>
+            <SelectItem value="user_roles">App roles</SelectItem>
+            <SelectItem value="project_members">Project membership</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={projectFilter} onValueChange={setProjectFilter}>
           <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -440,33 +466,62 @@ function AuditTab() {
 
       <Card className="glass rounded-2xl border-0 p-4 shadow-md">
         {loading ? (
-          <div className="space-y-2">{Array.from({length:6}).map((_,i)=><Skeleton key={i} className="h-14" />)}</div>
+          <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
         ) : filtered.length === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">No activity yet.</p>
+          <p className="py-12 text-center text-sm text-muted-foreground">No audit entries yet.</p>
         ) : (
           <ul className="space-y-2">
             <AnimatePresence initial={false}>
-              {filtered.map(r => {
-                const u = profiles[r.user_id];
-                const name = u?.full_name || u?.email || "Unknown user";
-                const projectName = projects[r.project_id] || "Unknown project";
+              {filtered.map((r) => {
+                const actor = labelOf(r.actor_id);
+                const target = labelOf(r.target_user_id);
+                const isProject = r.entity_type === "project_members";
+                const projectName = r.project_id ? projects[r.project_id] : null;
+
+                let summary = "";
+                if (r.entity_type === "user_roles") {
+                  if (r.action === "granted") summary = `granted app role`;
+                  else if (r.action === "revoked") summary = `revoked app role`;
+                  else summary = `changed app role`;
+                } else {
+                  if (r.action === "added") summary = `added ${target} to project`;
+                  else if (r.action === "removed") summary = `removed ${target} from project`;
+                  else summary = `changed ${target}'s project role`;
+                }
+
                 return (
-                  <motion.li key={r.id}
+                  <motion.li
+                    key={r.id}
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="flex items-start gap-3 rounded-xl border border-border/60 bg-card p-3"
                   >
-                    <Avatar className="h-8 w-8"><AvatarFallback className="bg-gradient-primary text-xs text-primary-foreground">{name.slice(0,2).toUpperCase()}</AvatarFallback></Avatar>
+                    <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${isProject ? "bg-accent/15 text-accent" : "bg-primary/10 text-primary"}`}>
+                      {isProject ? <FolderCog className="h-4 w-4" /> : <UserCog className="h-4 w-4" />}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm">
-                        <span className="font-medium">{name}</span>{" "}
-                        <span className="text-muted-foreground">{r.action}</span>
-                        {r.metadata?.title && <span className="font-medium"> — {r.metadata.title}</span>}
+                        <span className="font-medium">{actor}</span>{" "}
+                        <span className="text-muted-foreground">{summary}</span>
+                        {r.entity_type === "user_roles" && (
+                          <> on <span className="font-medium">{target}</span></>
+                        )}
                       </p>
-                      <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline" className="font-normal">{projectName}</Badge>
-                        <span>{formatDistanceToNow(parseISO(r.created_at), { addSuffix: true })}</span>
-                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                        {(r.old_value || r.new_value) && (
+                          <span className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5">
+                            <Badge variant="outline" className="border-destructive/30 bg-destructive/10 px-1.5 py-0 text-[10px] font-medium text-destructive">
+                              {r.old_value || "none"}
+                            </Badge>
+                            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                            <Badge variant="outline" className="border-success/30 bg-success/10 px-1.5 py-0 text-[10px] font-medium text-success">
+                              {r.new_value || "none"}
+                            </Badge>
+                          </span>
+                        )}
+                        {projectName && <Badge variant="outline" className="font-normal">{projectName}</Badge>}
+                        <span className="text-muted-foreground">{formatDistanceToNow(parseISO(r.created_at), { addSuffix: true })}</span>
+                      </div>
                     </div>
                   </motion.li>
                 );
