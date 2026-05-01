@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { LayoutDashboard, FolderKanban, LogOut, Sparkles, Menu, Search, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, FolderKanban, LogOut, Sparkles, Menu, ShieldCheck, ListTodo } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -9,10 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import NotificationBell from "@/components/NotificationBell";
+import CommandPalette from "@/components/CommandPalette";
 
 const baseNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Projects", icon: FolderKanban },
+  { to: "/my-tasks", label: "My tasks", icon: ListTodo, end: false },
 ];
 
 function NavList({ onNav, isAdmin }: { onNav?: () => void; isAdmin?: boolean }) {
@@ -118,14 +121,9 @@ export default function AppLayout() {
               <NavList isAdmin={isAdmin} />
             </SheetContent>
           </Sheet>
-          <div className="hidden items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-1.5 text-sm text-muted-foreground md:flex md:w-80">
-            <Search className="h-4 w-4" />
-            <input
-              placeholder="Search tasks, projects..."
-              className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground/60"
-            />
-          </div>
+          <CommandPalette />
           <div className="ml-auto flex items-center gap-2">
+            <NotificationBell />
             <Avatar className="h-8 w-8 lg:hidden"><AvatarFallback className="bg-gradient-primary text-xs text-primary-foreground">{initials}</AvatarFallback></Avatar>
           </div>
         </header>
