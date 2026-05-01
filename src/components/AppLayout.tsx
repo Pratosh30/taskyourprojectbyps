@@ -1,20 +1,24 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { LayoutDashboard, FolderKanban, LogOut, Sparkles, Menu, Search } from "lucide-react";
+import { LayoutDashboard, FolderKanban, LogOut, Sparkles, Menu, Search, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-const nav = [
+const baseNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Projects", icon: FolderKanban },
 ];
 
-function NavList({ onNav }: { onNav?: () => void }) {
+function NavList({ onNav, isAdmin }: { onNav?: () => void; isAdmin?: boolean }) {
+  const nav = isAdmin
+    ? [...baseNav, { to: "/team", label: "Team", icon: ShieldCheck, end: false }]
+    : baseNav;
   return (
     <nav className="flex flex-col gap-1 px-3">
       {nav.map((item) => (
@@ -56,6 +60,7 @@ function SidebarBrand() {
 
 export default function AppLayout() {
   const { user, signOut } = useAuth();
+  const { isAdmin } = useIsAdmin();
   const navigate = useNavigate();
   const [profileName, setProfileName] = useState<string>("");
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -84,7 +89,7 @@ export default function AppLayout() {
         <SidebarBrand />
         <div className="mt-2 flex-1 overflow-y-auto">
           <p className="px-6 pb-2 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Workspace</p>
-          <NavList />
+          <NavList isAdmin={isAdmin} />
         </div>
         <div className="border-t border-sidebar-border p-3">
           <div className="flex items-center gap-3 rounded-xl px-2 py-2">
@@ -110,7 +115,7 @@ export default function AppLayout() {
             </SheetTrigger>
             <SheetContent side="left" className="w-72 bg-sidebar p-0 text-sidebar-foreground">
               <SidebarBrand />
-              <NavList />
+              <NavList isAdmin={isAdmin} />
             </SheetContent>
           </Sheet>
           <div className="hidden items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-1.5 text-sm text-muted-foreground md:flex md:w-80">
