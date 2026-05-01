@@ -1,20 +1,24 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { LayoutDashboard, FolderKanban, LogOut, Sparkles, Menu, Search } from "lucide-react";
+import { LayoutDashboard, FolderKanban, LogOut, Sparkles, Menu, Search, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-const nav = [
+const baseNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Projects", icon: FolderKanban },
 ];
 
-function NavList({ onNav }: { onNav?: () => void }) {
+function NavList({ onNav, isAdmin }: { onNav?: () => void; isAdmin?: boolean }) {
+  const nav = isAdmin
+    ? [...baseNav, { to: "/team", label: "Team", icon: ShieldCheck, end: false }]
+    : baseNav;
   return (
     <nav className="flex flex-col gap-1 px-3">
       {nav.map((item) => (
